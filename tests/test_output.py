@@ -160,3 +160,32 @@ def test_format_model_catalog() -> None:
     assert "PARAMS" in catalog_str
     assert "SPEED" in catalog_str
 
+
+def test_format_batch_summary() -> None:
+    """Test format_batch_summary outputs pipe-bordered header card."""
+    from point.output import format_batch_summary
+
+    card = format_batch_summary(total_images=5, total_detections=18)
+    assert "POINT BATCH SUMMARY" in card
+    assert "Total Images     : 5" in card
+    assert "Total Detections : 18" in card
+
+
+def test_format_batch_terminal_output() -> None:
+    """Test format_batch_terminal_output combines batch header with image cards."""
+    from point.output import format_batch_terminal_output
+
+    results = {
+        "pic1.jpg": [Detection("pic1.jpg", "dog", 16, 0.92, (1, 1, 10, 10))],
+        "pic2.jpg": [],
+    }
+    output = format_batch_terminal_output(results)
+    assert "POINT BATCH SUMMARY" in output
+    assert "Total Images     : 2" in output
+    assert "Total Detections : 1" in output
+    assert "Image            : pic1.jpg" in output
+    assert "Image            : pic2.jpg" in output
+    assert "No objects detected." in output
+    assert "Class      : dog" in output
+
+

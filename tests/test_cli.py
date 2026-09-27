@@ -29,7 +29,7 @@ def test_parser_short_flags() -> None:
     """Test parser with short flags."""
     parser = create_parser()
     args = parser.parse_args(["-i", "street.jpg", "-show", "-load", "results"])
-    assert args.image == "street.jpg"
+    assert args.image == ["street.jpg"]
     assert args.show is True
     assert args.load == "results"
     assert args.model == "yolo11n.pt"
@@ -44,10 +44,17 @@ def test_parser_long_flags() -> None:
         "--load", "out.jsonl",
         "--model", "custom_weights.pt",
     ])
-    assert args.image == "photo.png"
+    assert args.image == ["photo.png"]
     assert args.show is True
     assert args.load == "out.jsonl"
     assert args.model == "custom_weights.pt"
+
+
+def test_parser_multi_image_flag() -> None:
+    """Test parser accepting multiple image arguments."""
+    parser = create_parser()
+    args = parser.parse_args(["-i", "img1.jpg", "img2.jpg", "folder/"])
+    assert args.image == ["img1.jpg", "img2.jpg", "folder/"]
 
 
 def test_run_no_output_options(capsys: pytest.CaptureFixture[str]) -> None:
@@ -273,6 +280,174 @@ def test_run_update_flag(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capture
         code = run(["-update"])
         assert code == 0
         mock_updater.assert_called_once()
+
+
+def test_run_batch_no_output_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test batch detection with no output flags prints total summary."""
+    img1 = tmp_path / "img1.jpg"
+    img2 = tmp_path / "img2.jpg"
+    Image.new("RGB", (30, 30), color="red").save(img1)
+    Image.new("RGB", (30, 30), color="blue").save(img2)
+
+    batch_results = {
+        str(img1): [Detection(str(img1), "person", 0, 0.9, (1, 1, 10, 10))],
+        str(img2): [Detection(str(img2), "car", 2, 0.85, (2, 2, 20, 20))],
+    }
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img1), str(img2)])
+        assert code == 0
+
+        captured = capsys.readouterr()
+        assert "Processed 2 image(s), detected 2 object(s) in total." in captured.out
+        assert "Use '-show' to display results" in captured.out
+
+
+def test_run_batch_show_flag(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test batch detection with -show prints summary card and individual cards."""
+    img1 = tmp_path / "img1.jpg"
+    img2 = tmp_path / "img2.jpg"
+    Image.new("RGB", (30, 30), color="red").save(img1)
+    Image.new("RGB", (30, 30), color="blue").save(img2)
+
+    batch_results = {
+        str(img1): [Detection(str(img1), "person", 0, 0.95, (1, 1, 10, 10))],
+        str(img2): [Detection(str(img2), "dog", 16, 0.88, (2, 2, 20, 20))],
+    }
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img1), str(img2), "-show"])
+        assert code == 0
+
+        captured = capsys.readouterr()
+        assert "POINT BATCH SUMMARY" in captured.out
+        assert "Total Images     : 2" in captured.out
+        assert "Total Detections : 2" in captured.out
+        assert "person" in captured.out
+        assert "dog" in captured.out
+
+
+def test_run_batch_load_flag(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test batch detection with -load saves all detections across images into one JSONL file."""
+    img1 = tmp_path / "img1.jpg"
+    img2 = tmp_path / "img2.jpg"
+    Image.new("RGB", (30, 30), color="red").save(img1)
+    Image.new("RGB", (30, 30), color="blue").save(img2)
+
+    batch_results = {
+        str(img1): [Detection(str(img1), "person", 0, 0.95, (1, 1, 10, 10))],
+        str(img2): [
+            Detection(str(img2), "car", 2, 0.88, (2, 2, 20, 20)),
+            Detection(str(img2), "truck", 7, 0.75, (5, 5, 25, 25)),
+        ],
+    }
+
+    out_file = tmp_path / "batch_out"
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img1), str(img2), "-load", str(out_file)])
+        assert code == 0
+
+        target_jsonl = tmp_path / "batch_out.jsonl"
+        assert target_jsonl.is_file()
+
+        lines = target_jsonl.read_text().strip().split("\n")
+        assert len(lines) == 3
+
+        record1 = json.loads(lines[0])
+        assert record1["image"] == str(img1)
+        assert record1["class"] == "person"
+
+        record2 = json.loads(lines[1])
+        assert record2["image"] == str(img2)
+        assert record2["class"] == "car"
+
+        captured = capsys.readouterr()
+        assert f"Saved 3 detection(s) from 2 image(s) to {target_jsonl}" in captured.out
+
+
+def test_run_directory_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test running Point pointing to a directory processes all images inside."""
+    img_dir = tmp_path / "photos"
+    img_dir.mkdir()
+    p1 = img_dir / "a.jpg"
+    p2 = img_dir / "b.png"
+    Image.new("RGB", (40, 40), color="white").save(p1)
+    Image.new("RGB", (40, 40), color="gray").save(p2)
+
+    batch_results = {
+        str(p1): [Detection(str(p1), "cat", 15, 0.92, (1, 1, 20, 20))],
+        str(p2): [],
+    }
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img_dir), "-show"])
+        assert code == 0
+
+        captured = capsys.readouterr()
+        assert "POINT BATCH SUMMARY" in captured.out
+        assert "cat" in captured.out
+
+
+def test_run_directory_empty_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test running Point pointing to an empty directory prints error."""
+    empty_dir = tmp_path / "empty_dir"
+    empty_dir.mkdir()
+
+    code = run(["-i", str(empty_dir)])
+    assert code == 1
+
+    captured = capsys.readouterr()
+    assert f"Error: No valid images found in directory: {empty_dir}" in captured.err
+
+
+def test_run_batch_visualize_default(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test batch visualization without output path saves _detected images."""
+    img1 = tmp_path / "v1.jpg"
+    img2 = tmp_path / "v2.png"
+    Image.new("RGB", (50, 50), color="white").save(img1)
+    Image.new("RGB", (50, 50), color="black").save(img2)
+
+    batch_results = {
+        str(img1): [Detection(str(img1), "cup", 41, 0.8, (2, 2, 20, 20))],
+        str(img2): [Detection(str(img2), "bottle", 39, 0.9, (4, 4, 30, 30))],
+    }
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img1), str(img2), "-visualize"])
+        assert code == 0
+
+        assert (tmp_path / "v1_detected.jpg").is_file()
+        assert (tmp_path / "v2_detected.png").is_file()
+
+        captured = capsys.readouterr()
+        assert "Saved 2 annotated image(s)" in captured.out
+
+
+def test_run_batch_visualize_directory(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Test batch visualization with output directory saves annotated images inside it."""
+    img1 = tmp_path / "v1.jpg"
+    img2 = tmp_path / "v2.png"
+    Image.new("RGB", (50, 50), color="white").save(img1)
+    Image.new("RGB", (50, 50), color="black").save(img2)
+
+    out_dir = tmp_path / "annotated_results"
+
+    batch_results = {
+        str(img1): [Detection(str(img1), "cup", 41, 0.8, (2, 2, 20, 20))],
+        str(img2): [Detection(str(img2), "bottle", 39, 0.9, (4, 4, 30, 30))],
+    }
+
+    with patch("point.cli.YOLODetector.detect_batch", return_value=batch_results):
+        code = run(["-i", str(img1), str(img2), "-o", str(out_dir)])
+        assert code == 0
+
+        assert (out_dir / "v1_detected.jpg").is_file()
+        assert (out_dir / "v2_detected.png").is_file()
+
+        captured = capsys.readouterr()
+        assert f"Saved 2 annotated image(s) to {out_dir}" in captured.out
+
 
 
 

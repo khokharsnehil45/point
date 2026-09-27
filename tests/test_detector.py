@@ -158,3 +158,111 @@ def test_yolo_detector_inference_failure(tmp_path: Path) -> None:
 
     with pytest.raises(ModelError, match="Inference failed"):
         detector.detect(image_file)
+
+
+def test_collect_image_paths_directory(tmp_path: Path) -> None:
+    """Test collecting image paths from a flat directory."""
+    from point.detector import collect_image_paths
+
+    dir_path = tmp_path / "gallery"
+    dir_path.mkdir()
+    f1 = dir_path / "img1.jpg"
+    f2 = dir_path / "img2.png"
+    txt = dir_path / "notes.txt"
+    Image.new("RGB", (10, 10)).save(f1)
+    Image.new("RGB", (10, 10)).save(f2)
+    txt.write_text("not an image")
+
+    paths = collect_image_paths(dir_path)
+    assert len(paths) == 2
+    assert f1 in paths
+    assert f2 in paths
+    assert txt not in paths
+
+
+def test_collect_image_paths_recursive(tmp_path: Path) -> None:
+    """Test collecting image paths from nested directory structures."""
+    from point.detector import collect_image_paths
+
+    dir_path = tmp_path / "dataset"
+    sub_dir = dir_path / "val"
+    sub_dir.mkdir(parents=True)
+    f1 = sub_dir / "val1.webp"
+    Image.new("RGB", (10, 10)).save(f1)
+
+    paths = collect_image_paths(dir_path)
+    assert len(paths) == 1
+    assert paths[0] == f1
+
+
+def test_collect_image_paths_glob(tmp_path: Path) -> None:
+    """Test collecting image paths with glob wildcards."""
+    from point.detector import collect_image_paths
+
+    f1 = tmp_path / "flower1.jpg"
+    f2 = tmp_path / "flower2.jpg"
+    f3 = tmp_path / "tree.png"
+    Image.new("RGB", (10, 10)).save(f1)
+    Image.new("RGB", (10, 10)).save(f2)
+    Image.new("RGB", (10, 10)).save(f3)
+
+    pattern = str(tmp_path / "flower*.jpg")
+    paths = collect_image_paths(pattern)
+    assert len(paths) == 2
+    assert f1 in paths
+    assert f2 in paths
+    assert f3 not in paths
+
+
+def test_collect_image_paths_errors(tmp_path: Path) -> None:
+    """Test error conditions for collect_image_paths."""
+    from point.detector import collect_image_paths
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    with pytest.raises(ImageNotFoundError, match="No valid images found in directory"):
+        collect_image_paths(empty_dir)
+
+    with pytest.raises(ImageNotFoundError, match="No images matched pattern"):
+        collect_image_paths(str(tmp_path / "nonexistent_*.jpg"))
+
+    with pytest.raises(ImageNotFoundError, match="Image not found"):
+        collect_image_paths(tmp_path / "missing.jpg")
+
+
+def test_yolo_detector_detect_batch_mocked(tmp_path: Path) -> None:
+    """Test YOLODetector.detect_batch with multiple images."""
+    f1 = tmp_path / "b1.jpg"
+    f2 = tmp_path / "b2.png"
+    Image.new("RGB", (20, 20)).save(f1)
+    Image.new("RGB", (20, 20)).save(f2)
+
+    detector = YOLODetector()
+
+    # Empty inputs
+    assert detector.detect_batch([]) == {}
+
+    # Mock ultralytics batch results
+    mock_box1 = MagicMock()
+    mock_box1.cls = [0]
+    mock_box1.conf = [0.95]
+    mock_box1.xyxy = [[10.0, 10.0, 50.0, 50.0]]
+
+    r1 = MagicMock()
+    r1.boxes = [mock_box1]
+    r1.names = {0: "person"}
+
+    r2 = MagicMock()
+    r2.boxes = []
+    r2.names = {}
+
+    mock_model = MagicMock()
+    mock_model.return_value = [r1, r2]
+    detector._model = mock_model
+
+    batch_res = detector.detect_batch([f1, f2], batch_size=2)
+    assert len(batch_res) == 2
+    assert len(batch_res[str(f1)]) == 1
+    assert batch_res[str(f1)][0].class_name == "person"
+    assert len(batch_res[str(f2)]) == 0
+

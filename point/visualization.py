@@ -36,6 +36,40 @@ def get_default_visualize_path(image_path: str | Path) -> Path:
     return p.with_name(f"{p.stem}_detected{suffix}")
 
 
+def get_batch_visualize_path(
+    image_path: str | Path,
+    output_target: str | Path | None = None,
+    index: int = 0,
+) -> Path:
+    """Determine output visualization path for batch processing.
+
+    Args:
+        image_path: Source image path.
+        output_target: Optional destination directory or file path.
+        index: Zero-based index of the image in the batch.
+
+    Returns:
+        Resolved output Path.
+    """
+    p = Path(image_path)
+    suffix = p.suffix if p.suffix else ".jpg"
+
+    if output_target is None or not str(output_target).strip():
+        return get_default_visualize_path(p)
+
+    out = Path(output_target)
+    # If out target is explicitly a directory, has trailing slash, or has no extension, treat as directory
+    if (
+        out.is_dir()
+        or str(output_target).endswith("/")
+        or out.suffix.lower() not in (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif")
+    ):
+        return out / f"{p.stem}_detected{suffix}"
+
+    # If out target has a file extension, format with index for multiple images
+    return out.parent / f"{out.stem}_{index + 1}{out.suffix}"
+
+
 def draw_detections(
     image_path: str | Path,
     detections: Sequence[Detection],

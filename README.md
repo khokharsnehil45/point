@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/Backend-YOLO11-00FFFF?style=flat-square" alt="YOLO11">
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License MIT">
-  <img src="https://img.shields.io/badge/Tests-39%20Passing-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-55%20Passing-brightgreen?style=flat-square" alt="Tests">
 </p>
 
 <p align="center">
@@ -16,10 +16,10 @@
 </p>
 
 ```text
-Image ──▶ Point ──▶ Object Detection Model ──▶ Detection Results
+Image(s) / Directory ──▶ Point ──▶ Object Detection Model ──▶ Detection Results
 ```
 
-Point takes an image, executes an object detection model under the hood, and exposes the results through a clean, developer-friendly terminal interface, structured JSONL exports, and visual bounding-box overlays.
+Point takes an image, multiple images, or entire folders, executes an object detection model under the hood, and exposes the results through a clean, developer-friendly terminal interface, structured JSONL exports, and visual bounding-box overlays.
 
 ---
 
@@ -54,19 +54,22 @@ pip install -e ".[dev]"
 # 1. View detection results framed in terminal pipes
 point -i street.jpg -show
 
-# 2. Export detections to a JSONL file (street_results.jsonl)
-point -i street.jpg -load street_results
+# 2. Batch process an entire directory of images
+point -i ./photos/ -show
 
-# 3. Save an annotated image with drawn bounding boxes and label badges
-point -i street.jpg --visualize
+# 3. Export detections across multiple images to a JSONL file
+point -i img1.jpg img2.jpg -load batch_results
 
-# 4. Combine all three in a single run
-point -i street.jpg -show -load detections --visualize
+# 4. Save annotated images with bounding boxes into an output directory
+point -i "images/*.jpg" --visualize ./annotated/
 
-# 5. Check active model and available YOLO catalog
+# 5. Combine all three in a single run
+point -i ./photos/ -show -load detections -visualize ./output/
+
+# 6. Check active model and available YOLO catalog
 point -model -catalog
 
-# 6. Update Point to the latest version
+# 7. Update Point to the latest version
 point -update
 ```
 
@@ -75,17 +78,18 @@ point -update
 ## CLI Command Reference
 
 ```text
-usage: point [-h] [-i IMAGE] [-show] [-load FILENAME] [-visualize [OUT_PATH]] [-o OUT_PATH] 
-             [-model [MODEL]] [-set-model MODEL_NAME] [-catalog] [-update] [-v]
+usage: point [-h] [-i IMAGE [IMAGE ...]] [-show] [-load FILENAME]
+             [-visualize [OUT_PATH]] [-o OUT_PATH] [-model [MODEL]]
+             [-set-model MODEL_NAME] [-catalog] [-update] [-v]
 ```
 
 | Flag | Shorthand | Description | Example |
 | :--- | :--- | :--- | :--- |
-| `--image` | `-i` | Input image path *(required for detection)* | `point -i photo.jpg` |
+| `--image` | `-i` | Input image(s), directory, or glob pattern | `point -i photo.jpg` or `point -i ./folder/` |
 | `--show` | `-show` | Print detection results to the terminal | `point -i photo.jpg -show` |
 | `--load` | `-load` | Export detections to a JSONL file | `point -i photo.jpg -load results` |
-| `--visualize` | `-visualize` | Generate annotated image with bounding boxes | `point -i photo.jpg --visualize` |
-| `--output` | `-o` | Custom output path for annotated image | `point -i photo.jpg -o annotated.jpg` |
+| `--visualize` | `-visualize` | Generate annotated image(s) with bounding boxes | `point -i photo.jpg --visualize` |
+| `--output` | `-o` | Custom output path/directory for annotated image(s) | `point -i ./folder/ -o ./annotated/` |
 | `--model` | `-m` | Specify model or checkpoint weights | `point -i photo.jpg -m yolo11s.pt` |
 | `--set-model` | `-set-model`| Set permanent default model in user config | `point -set-model yolo11s.pt` |
 | `--catalog` | `-catalog` | Display available YOLO models & active model | `point -model -catalog` |
@@ -134,9 +138,35 @@ point -i street.jpg -show
 =======================================================
 ```
 
+### 2. Batch & Directory Processing
+
+Process multiple individual images, entire folders, or glob patterns in a single high-performance command:
+
+```bash
+# Process multiple images
+point -i img1.jpg img2.jpg img3.jpg -show
+
+# Scan and process an entire directory (flat or nested)
+point -i ./datasets/val/ -show
+
+# Use glob wildcards
+point -i "camera_feeds/*.png" -load feed_detections -o ./annotated_feeds/
+```
+
+When evaluating multiple images, Point outputs a clean **Batch Summary** header followed by individual image cards:
+
+```text
+=======================================================
+|                 POINT BATCH SUMMARY                 |
+=======================================================
+| Total Images     : 3                                |
+| Total Detections : 14                               |
+=======================================================
+```
+
 ---
 
-### 2. JSONL Serialization (`-load`)
+### 3. JSONL Serialization (`-load`)
 
 ```bash
 point -i street.jpg -load detections

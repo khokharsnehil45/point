@@ -117,6 +117,49 @@ def format_terminal_output(image_name: str, detections: Sequence[Detection]) -> 
     return "\n".join(output_lines)
 
 
+def format_batch_summary(total_images: int, total_detections: int, width: int = 55) -> str:
+    """Format batch summary header into a pipe-bordered card.
+
+    Args:
+        total_images: Total number of processed images.
+        total_detections: Total number of detected objects across all images.
+        width: Total horizontal character width.
+
+    Returns:
+        Formatted summary card framed in pipes (|) and == dividers.
+    """
+    div = "=" * width
+    inner_width = width - 4
+    lines = [
+        div,
+        f"|{'POINT BATCH SUMMARY'.center(width - 2)}|",
+        div,
+        f"| {f'Total Images     : {total_images}'.ljust(inner_width)} |",
+        f"| {f'Total Detections : {total_detections}'.ljust(inner_width)} |",
+        div,
+    ]
+    return "\n".join(lines)
+
+
+def format_batch_terminal_output(results: dict[str, Sequence[Detection]]) -> str:
+    """Format batch detection results into human-readable terminal reports.
+
+    Args:
+        results: Dictionary mapping image names/paths to sequences of Detections.
+
+    Returns:
+        Combined formatted string with summary card and individual cards for each image.
+    """
+    total_images = len(results)
+    total_detections = sum(len(dets) for dets in results.values())
+
+    blocks: list[str] = [format_batch_summary(total_images, total_detections)]
+    for image_name, dets in results.items():
+        blocks.append(format_terminal_output(image_name, dets))
+
+    return "\n\n".join(blocks)
+
+
 MODEL_CATALOG = [
     ("yolo11n.pt", "2.6M", "Fastest", "Standard", "Real-time & Edge (Default)"),
     ("yolo11s.pt", "9.4M", "Fast", "Good", "Balanced Desktop"),

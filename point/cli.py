@@ -6,7 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
-from point.detector import DEFAULT_MODEL_NAME, YOLODetector
+from point.detector import DEFAULT_MODEL_NAME, YOLODetector, collect_image_paths
 from point.models import (
     ImageNotFoundError,
     InvalidImageError,
@@ -14,9 +14,18 @@ from point.models import (
     PointError,
 )
 from point.config import get_default_model, set_default_model
-from point.output import format_model_catalog, format_terminal_output, write_jsonl
+from point.output import (
+    format_batch_terminal_output,
+    format_model_catalog,
+    format_terminal_output,
+    write_jsonl,
+)
 from point.updater import run_update
-from point.visualization import draw_detections, get_default_visualize_path
+from point.visualization import (
+    draw_detections,
+    get_batch_visualize_path,
+    get_default_visualize_path,
+)
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +72,8 @@ def create_parser() -> argparse.ArgumentParser:
         "-i",
         "--image",
         required=False,
-        help="Input image path.",
+        nargs="+",
+        help="Input image path(s), directory, or glob pattern.",
     )
     parser.add_argument(
         "-show",
@@ -158,9 +168,29 @@ def run(argv: Sequence[str] | None = None) -> int:
         print(format_model_catalog(current_model=active_model))
         return 0
 
+    raw_images = args.image if isinstance(args.image, (list, tuple)) else [args.image]
+
+    # Check if single item that is not a directory and has no glob characters
+    is_simple_single = (
+        len(raw_images) == 1
+        and not Path(raw_images[0]).is_dir()
+        and not any(c in str(raw_images[0]) for c in ("*", "?", "["))
+    )
+
     try:
         detector = YOLODetector(model_name=active_model)
-        detections = detector.detect(args.image)
+        if is_simple_single:
+            single_image = raw_images[0]
+            detections = detector.detect(single_image)
+            all_results = {str(single_image): detections}
+            image_paths = [Path(single_image)]
+        else:
+            image_paths = collect_image_paths(raw_images)
+            if len(image_paths) == 1:
+                detections = detector.detect(image_paths[0])
+                all_results = {str(image_paths[0]): detections}
+            else:
+                all_results = detector.detect_batch(image_paths)
     except ImageNotFoundError as exc:
         sys.stderr.write(f"Error: {exc}\n")
         return 1
@@ -177,31 +207,62 @@ def run(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(f"Error: Unexpected error: {exc}\n")
         return 1
 
-    visualize_path = None
+    visualize_requested = (args.visualize is not None) or bool(args.visualize_output)
+    visualize_target: str | None = None
     if args.visualize_output:
-        visualize_path = Path(args.visualize_output)
-    elif args.visualize is not None:
-        if args.visualize.strip():
-            visualize_path = Path(args.visualize.strip())
-        else:
-            visualize_path = get_default_visualize_path(args.image)
+        visualize_target = args.visualize_output
+    elif args.visualize is not None and args.visualize.strip():
+        visualize_target = args.visualize.strip()
+
+    is_batch = len(image_paths) > 1
+    total_detections = sum(len(dets) for dets in all_results.values())
+    all_detections = [det for dets in all_results.values() for det in dets]
 
     # Neither -show nor -load nor visualize specified: output concise summary
-    if not args.show and not args.load and visualize_path is None:
-        print(f"Detected {len(detections)} object(s).")
+    if not args.show and not args.load and not visualize_requested:
+        if is_batch:
+            print(f"Processed {len(image_paths)} image(s), detected {total_detections} object(s) in total.")
+        else:
+            print(f"Detected {total_detections} object(s).")
         print("Use '-show' to display results or '-load <filename>' to save them.")
         return 0
 
     if args.show:
-        print(format_terminal_output(args.image, detections))
+        if is_batch:
+            print(format_batch_terminal_output(all_results))
+        else:
+            single_key = str(image_paths[0])
+            print(format_terminal_output(single_key, all_results[single_key]))
 
     if args.load:
-        saved_path = write_jsonl(detections, args.load)
-        print(f"Saved {len(detections)} detection(s) to {saved_path}")
+        saved_path = write_jsonl(all_detections, args.load)
+        if is_batch:
+            print(f"Saved {total_detections} detection(s) from {len(image_paths)} image(s) to {saved_path}")
+        else:
+            print(f"Saved {total_detections} detection(s) to {saved_path}")
 
-    if visualize_path is not None:
-        draw_detections(args.image, detections, output_path=visualize_path)
-        print(f"Saved annotated image to {visualize_path}")
+    if visualize_requested:
+        if is_batch:
+            saved_count = 0
+            for idx, p in enumerate(image_paths):
+                out_path = get_batch_visualize_path(p, visualize_target, index=idx)
+                draw_detections(p, all_results[str(p)], output_path=out_path)
+                saved_count += 1
+            if visualize_target and (
+                Path(visualize_target).is_dir()
+                or str(visualize_target).endswith("/")
+                or Path(visualize_target).suffix.lower() not in (
+                    ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif"
+                )
+            ):
+                print(f"Saved {saved_count} annotated image(s) to {visualize_target}")
+            else:
+                print(f"Saved {saved_count} annotated image(s)")
+        else:
+            single_p = image_paths[0]
+            out_path = Path(visualize_target) if visualize_target else get_default_visualize_path(single_p)
+            draw_detections(single_p, all_results[str(single_p)], output_path=out_path)
+            print(f"Saved annotated image to {out_path}")
 
     return 0
 

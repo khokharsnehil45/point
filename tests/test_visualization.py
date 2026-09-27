@@ -26,3 +26,24 @@ def test_draw_detections(tmp_path: Path) -> None:
     assert isinstance(img, Image.Image)
     assert out_path.is_file()
     assert img.size == (200, 200)
+
+
+def test_get_batch_visualize_path(tmp_path: Path) -> None:
+    """Test get_batch_visualize_path with default, directory, and file targets."""
+    from point.visualization import get_batch_visualize_path
+
+    img = Path("/data/photos/dog.png")
+
+    # Default (no target)
+    p_default = get_batch_visualize_path(img, None)
+    assert p_default == Path("/data/photos/dog_detected.png")
+
+    # Directory target
+    out_dir = tmp_path / "out_folder"
+    out_dir.mkdir()
+    p_dir = get_batch_visualize_path(img, out_dir)
+    assert p_dir == out_dir / "dog_detected.png"
+
+    # Specific file target with index
+    p_file = get_batch_visualize_path(img, tmp_path / "result.jpg", index=2)
+    assert p_file == tmp_path / "result_3.jpg"
