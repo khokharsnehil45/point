@@ -35,15 +35,15 @@ def run_update() -> int:
     Returns:
         Exit code (0 for success, non-zero for failure).
     """
-    width = 60
+    width = 68
     inner = width - 4
     div = "=" * width
 
     print(div)
     print(f"|{'POINT AUTO-UPDATE'.center(width - 2)}|")
     print(div)
-    print(f"| {'Current Version : v' + __version__.ljust(inner - 19)} |")
-    print(f"| {'Source Repo     : https://github.com/' + GITHUB_REPO.ljust(inner - 18)} |")
+    print(f"| {('Current Version : v' + __version__).ljust(inner)} |")
+    print(f"| {('Source Repo     : https://github.com/' + GITHUB_REPO).ljust(inner)} |")
     print(div)
 
     # Check if running within a local git repository
