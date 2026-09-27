@@ -11,6 +11,10 @@
   <img src="https://img.shields.io/badge/Tests-39%20Passing-brightgreen?style=flat-square" alt="Tests">
 </p>
 
+<p align="center">
+  <img src="point_showcase.png" alt="Point CLI Showcase" width="100%">
+</p>
+
 ```text
 Image ──▶ Point ──▶ Object Detection Model ──▶ Detection Results
 ```
